@@ -1,0 +1,286 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Site {
+  id          String         @id @default(uuid())
+  code        String         @unique
+  name        String
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  departments Department[]
+  sections    Section[]
+  shifts      Shift[]
+  employees   Employee[]
+  machines    Machine[]
+  faultNatures FaultNature[]
+  downtimes   DowntimeEvent[]
+  pmTemplates PmTemplate[]
+  parts       Part[]
+  workOrders  WorkOrder[]
+  pmSchedules PmSchedule[]
+}
+
+model Department {
+  id        String          @id @default(uuid())
+  siteId    String
+  code      String
+  name      String
+  createdAt DateTime        @default(now())
+
+  site      Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  employees Employee[]
+  downtimes DowntimeEvent[]
+
+  @@unique([siteId, code])
+}
+
+model Section {
+  id        String   @id @default(uuid())
+  siteId    String
+  code      String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site     Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  shifts   Shift[]
+  machines Machine[]
+
+  @@unique([siteId, code])
+}
+
+model Shift {
+  id                   String   @id @default(uuid())
+  siteId               String
+  sectionId            String?
+  name                 String
+  startTime            String
+  endTime              String
+  durationHours        Float    @default(12.0)
+  breakDurationMinutes Int      @default(60)
+  isOvernight          Boolean  @default(false)
+  createdAt            DateTime @default(now())
+
+  site                 Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  section              Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  downtimes            DowntimeEvent[]
+
+  @@unique([siteId, sectionId, name])
+}
+
+model Employee {
+  id           String     @id @default(uuid())
+  siteId       String
+  departmentId String
+  employeeCode String
+  firstName    String
+  lastName     String
+  email        String
+  role         String     @default("OPERATOR")
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  site         Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id])
+  reportedDowntimes DowntimeEvent[] @relation("ReportedBy")
+  approvedWorkOrders WorkOrder[]     @relation("ApprovedBy")
+  createdWorkOrders  WorkOrder[]     @relation("CreatedBy")
+
+  @@unique([siteId, employeeCode])
+  @@unique([siteId, email])
+}
+
+model Machine {
+  id                String             @id @default(uuid())
+  siteId            String
+  sectionId         String
+  code              String
+  name              String
+  criticality       String             @default("B")
+  make              String?
+  model             String?
+  serialNumber      String?
+  commissioningDate DateTime?
+  liveStatus        String             @default("RUNNING")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  site              Site               @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  section           Section            @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  downtimeMachines  DowntimeMachine[]
+  pmTemplates       PmTemplate[]
+
+  @@unique([siteId, code])
+}
+
+model FaultNature {
+  id          String   @id @default(uuid())
+  siteId      String
+  code        String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  downtimes   DowntimeEvent[]
+
+  @@unique([siteId, code])
+}
+
+model DowntimeEvent {
+  id              String        @id @default(uuid())
+  siteId          String
+  eventNumber     String
+  isPlanned       Boolean       @default(false)
+  departmentId    String
+  severity        String        @default("MEDIUM")
+  typeOfFault     String        @default("MACHINE")
+  faultNatureId   String
+  faultCode       String?
+  reportedById    String
+  startTime       DateTime
+  endTime         DateTime?
+  durationMinutes Float?
+  shiftId         String?
+  remarks         String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  site            Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  department      Department    @relation(fields: [departmentId], references: [id])
+  faultNature     FaultNature   @relation(fields: [faultNatureId], references: [id])
+  reportedBy      Employee      @relation("ReportedBy", fields: [reportedById], references: [id])
+  shift           Shift?        @relation(fields: [shiftId], references: [id])
+  machines        DowntimeMachine[]
+  labels          DowntimeLabel[]
+  workOrders      WorkOrder[]
+
+  @@unique([siteId, eventNumber])
+}
+
+model DowntimeMachine {
+  downtimeEventId String
+  machineId       String
+
+  downtimeEvent   DowntimeEvent @relation(fields: [downtimeEventId], references: [id], onDelete: Cascade)
+  machine         Machine       @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@id([downtimeEventId, machineId])
+}
+
+model DowntimeLabel {
+  id              String        @id @default(uuid())
+  downtimeEventId String
+  labelName       String
+
+  downtimeEvent   DowntimeEvent @relation(fields: [downtimeEventId], references: [id], onDelete: Cascade)
+
+  @@unique([downtimeEventId, labelName])
+}
+
+model PmTemplate {
+  id                     String           @id @default(uuid())
+  siteId                 String
+  code                   String
+  title                  String
+  machineId              String
+  frequencyType          String
+  frequencyValue         Int
+  frequencyUnit          String
+  estimatedDurationHours Float            @default(1.0)
+  requiredRole           String           @default("TECHNICIAN")
+  isActive               Boolean          @default(true)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  site                   Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  machine                Machine          @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  workOrders             WorkOrder[]
+  schedules              PmSchedule[]
+
+  @@unique([siteId, code])
+}
+
+model Part {
+  id             String          @id @default(uuid())
+  siteId         String
+  partNumber     String
+  name           String
+  unitCost       Float           @default(0.0)
+  quantityOnHand Float           @default(0.0)
+  minStockLevel  Float           @default(0.0)
+  createdAt      DateTime        @default(now())
+
+  site           Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  workOrderParts WorkOrderPart[]
+
+  @@unique([siteId, partNumber])
+}
+
+model WorkOrder {
+  id                         String        @id @default(uuid())
+  siteId                     String
+  woNumber                   String
+  woType                     String
+  priority                   String        @default("MEDIUM")
+  status                     String        @default("DRAFT")
+  downtimeEventId            String?
+  pmTemplateId               String?
+  scheduledDate              DateTime?
+  estimatedHours             Float         @default(0.0)
+  actualHours                Float         @default(0.0)
+  estimatedPartsCost         Float         @default(0.0)
+  actualPartsCost            Float         @default(0.0)
+  requiresSupervisorApproval Boolean       @default(false)
+  approvedById               String?
+  approvedAt                 DateTime?
+  createdById                String
+  createdAt                  DateTime      @default(now())
+
+  site                       Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  downtimeEvent              DowntimeEvent? @relation(fields: [downtimeEventId], references: [id], onDelete: SetNull)
+  pmTemplate                 PmTemplate?   @relation(fields: [pmTemplateId], references: [id], onDelete: SetNull)
+  approvedBy                 Employee?     @relation("ApprovedBy", fields: [approvedById], references: [id])
+  createdBy                  Employee      @relation("CreatedBy", fields: [createdById], references: [id])
+  partsConsumed              WorkOrderPart[]
+  pmSchedules                PmSchedule[]
+
+  @@unique([siteId, woNumber])
+}
+
+model WorkOrderPart {
+  id               String    @id @default(uuid())
+  workOrderId      String
+  partId           String
+  quantityConsumed Float
+  totalCost        Float
+  consumedAt       DateTime  @default(now())
+
+  workOrder        WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  part             Part      @relation(fields: [partId], references: [id])
+}
+
+model PmSchedule {
+  id               String      @id @default(uuid())
+  siteId           String
+  pmTemplateId     String
+  scheduledDueDate DateTime
+  status           String      @default("SCHEDULED")
+  workOrderId      String?
+  generatedAt      DateTime?
+
+  site             Site        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  pmTemplate       PmTemplate  @relation(fields: [pmTemplateId], references: [id], onDelete: Cascade)
+  workOrder        WorkOrder?  @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+
+  @@unique([siteId, pmTemplateId, scheduledDueDate])
+}
