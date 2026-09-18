@@ -8,279 +8,251 @@ generator client {
 }
 
 model Site {
-  id          String         @id @default(uuid())
-  code        String         @unique
+  id          String   @id @default(uuid())
+  code        String   @unique
   name        String
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  address     String?
+  city        String?
+  state       String?
+  country     String   @default("IN")
+  gstNo       String?  @map("gst_no")
+  timezone    String   @default("Asia/Kolkata")
+  status      String   @default("ACTIVE") // ACTIVE | INACTIVE
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedBy   String?  @map("updated_by")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
-  departments Department[]
-  sections    Section[]
+  warehouses  Warehouse[]
   shifts      Shift[]
-  employees   Employee[]
   machines    Machine[]
-  faultNatures FaultNature[]
-  downtimes   DowntimeEvent[]
-  pmTemplates PmTemplate[]
-  parts       Part[]
-  workOrders  WorkOrder[]
-  pmSchedules PmSchedule[]
+  employees   EmployeeSite[]
+
+  @@map("sites")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  siteId    String   @map("site_id")
+  name      String
+  type      String   @default("FABRICATION") // FABRICATION | GALVANIZING | FG_YARD | RAW_MATERIAL | OTHER
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  machines  Machine[]
+  employees EmployeeWarehouse[]
+
+  @@map("warehouses")
 }
 
 model Department {
-  id        String          @id @default(uuid())
-  siteId    String
-  code      String
-  name      String
-  createdAt DateTime        @default(now())
-
-  site      Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  employees Employee[]
-  downtimes DowntimeEvent[]
-
-  @@unique([siteId, code])
-}
-
-model Section {
   id        String   @id @default(uuid())
-  siteId    String
-  code      String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  name      String   @unique
+  isDeleted Boolean  @default(false) @map("is_deleted")
 
-  site     Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  shifts   Shift[]
-  machines Machine[]
+  roles     Role[]
+  employees Employee[]
 
-  @@unique([siteId, code])
+  @@map("departments")
 }
 
-model Shift {
-  id                   String   @id @default(uuid())
-  siteId               String
-  sectionId            String?
-  name                 String
-  startTime            String
-  endTime              String
-  durationHours        Float    @default(12.0)
-  breakDurationMinutes Int      @default(60)
-  isOvernight          Boolean  @default(false)
-  createdAt            DateTime @default(now())
+model Role {
+  id            String      @id @default(uuid())
+  departmentId  String?     @map("department_id")
+  name          String
+  permissionSet String      @default("{}") @map("permission_set")
+  isDeleted     Boolean     @default(false) @map("is_deleted")
 
-  site                 Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  section              Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  downtimes            DowntimeEvent[]
+  department    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employees     Employee[]
 
-  @@unique([siteId, sectionId, name])
+  @@unique([departmentId, name])
+  @@map("roles")
 }
 
 model Employee {
-  id           String     @id @default(uuid())
-  siteId       String
-  departmentId String
-  employeeCode String
-  firstName    String
-  lastName     String
-  email        String
-  role         String     @default("OPERATOR")
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id           String   @id @default(uuid())
+  empCode      String   @unique @map("emp_code")
+  name         String
+  mobile       String?
+  email        String?
+  departmentId String   @map("department_id")
+  roleId       String   @map("role_id")
+  landingPage  String   @default("DEFAULT") @map("landing_page")
+  status       String   @default("ACTIVE") // ACTIVE | INACTIVE
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+  createdBy    String?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedBy    String?  @map("updated_by")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
-  site         Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
   department   Department @relation(fields: [departmentId], references: [id])
-  reportedDowntimes DowntimeEvent[] @relation("ReportedBy")
-  approvedWorkOrders WorkOrder[]     @relation("ApprovedBy")
-  createdWorkOrders  WorkOrder[]     @relation("CreatedBy")
+  role         Role       @relation(fields: [roleId], references: [id])
+  sites        EmployeeSite[]
+  warehouses   EmployeeWarehouse[]
+  roster       EmployeeShiftRoster[]
+  user         User?
 
-  @@unique([siteId, employeeCode])
-  @@unique([siteId, email])
+  @@map("employees")
+}
+
+model EmployeeSite {
+  employeeId String   @map("employee_id")
+  siteId     String   @map("site_id")
+
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, siteId])
+  @@map("employee_sites")
+}
+
+model EmployeeWarehouse {
+  employeeId  String    @map("employee_id")
+  warehouseId String    @map("warehouse_id")
+
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, warehouseId])
+  @@map("employee_warehouses")
+}
+
+model Shift {
+  id           String   @id @default(uuid())
+  siteId       String   @map("site_id")
+  name         String
+  startTime    String   @map("start_time")
+  endTime      String   @map("end_time")
+  isOvernight  Boolean  @default(false) @map("is_overnight")
+  breakMinutes Int      @default(0) @map("break_minutes")
+  grossMinutes Int      @map("gross_minutes")
+  netMinutes   Int      @map("net_minutes")
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  site         Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  workingDays  ShiftWorkingDay[]
+  roster       EmployeeShiftRoster[]
+  machines     MachineShiftAssignment[]
+
+  @@unique([siteId, name])
+  @@map("shifts")
+}
+
+model ShiftWorkingDay {
+  shiftId   String @map("shift_id")
+  dayOfWeek Int    @map("day_of_week") // 0=Sunday, 1=Monday, ..., 6=Saturday
+
+  shift     Shift  @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@id([shiftId, dayOfWeek])
+  @@map("shift_working_days")
+}
+
+model EmployeeShiftRoster {
+  id            String    @id @default(uuid())
+  employeeId    String    @map("employee_id")
+  shiftId       String    @map("shift_id")
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift         Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@map("employee_shift_roster")
 }
 
 model Machine {
-  id                String             @id @default(uuid())
-  siteId            String
-  sectionId         String
-  code              String
-  name              String
-  criticality       String             @default("B")
-  make              String?
-  model             String?
-  serialNumber      String?
-  commissioningDate DateTime?
-  liveStatus        String             @default("RUNNING")
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id              String   @id @default(uuid())
+  siteId          String   @map("site_id")
+  warehouseId     String?  @map("warehouse_id")
+  parentMachineId String?  @map("parent_machine_id")
+  name            String
+  level           Int      @default(0)
+  path            String   @default("")
+  isDeleted       Boolean  @default(false) @map("is_deleted")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
-  site              Site               @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  section           Section            @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  downtimeMachines  DowntimeMachine[]
-  pmTemplates       PmTemplate[]
+  site            Site      @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  parentMachine   Machine?  @relation("MachineTree", fields: [parentMachineId], references: [id], onDelete: Cascade)
+  childMachines   Machine[] @relation("MachineTree")
 
-  @@unique([siteId, code])
+  productionParams MachineProductionParam[]
+  parameters       MachineParameter[]
+  shifts           MachineShiftAssignment[]
+
+  @@unique([parentMachineId, name])
+  @@map("machines")
 }
 
-model FaultNature {
-  id          String   @id @default(uuid())
-  siteId      String
-  code        String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
+model MachineProductionParam {
+  id          String  @id @default(uuid())
+  machineId   String  @map("machine_id")
+  metricName  String  @map("metric_name")
+  unit        String
+  isActive    Boolean @default(true) @map("is_active")
 
-  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  downtimes   DowntimeEvent[]
+  machine     Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
 
-  @@unique([siteId, code])
+  @@map("machine_production_params")
 }
 
-model DowntimeEvent {
-  id              String        @id @default(uuid())
-  siteId          String
-  eventNumber     String
-  isPlanned       Boolean       @default(false)
-  departmentId    String
-  severity        String        @default("MEDIUM")
-  typeOfFault     String        @default("MACHINE")
-  faultNatureId   String
-  faultCode       String?
-  reportedById    String
-  startTime       DateTime
-  endTime         DateTime?
-  durationMinutes Float?
-  shiftId         String?
-  remarks         String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+model MachineParameter {
+  id            String   @id @default(uuid())
+  machineId     String   @map("machine_id")
+  parameterName String   @map("parameter_name")
+  minValue      Float?   @map("min_value")
+  maxValue      Float?   @map("max_value")
+  unit          String?
 
-  site            Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  department      Department    @relation(fields: [departmentId], references: [id])
-  faultNature     FaultNature   @relation(fields: [faultNatureId], references: [id])
-  reportedBy      Employee      @relation("ReportedBy", fields: [reportedById], references: [id])
-  shift           Shift?        @relation(fields: [shiftId], references: [id])
-  machines        DowntimeMachine[]
-  labels          DowntimeLabel[]
-  workOrders      WorkOrder[]
+  machine       Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
 
-  @@unique([siteId, eventNumber])
+  @@map("machine_parameters")
 }
 
-model DowntimeMachine {
-  downtimeEventId String
-  machineId       String
+model MachineShiftAssignment {
+  machineId String  @map("machine_id")
+  shiftId   String  @map("shift_id")
 
-  downtimeEvent   DowntimeEvent @relation(fields: [downtimeEventId], references: [id], onDelete: Cascade)
-  machine         Machine       @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  machine   Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  shift     Shift   @relation(fields: [shiftId], references: [id], onDelete: Cascade)
 
-  @@id([downtimeEventId, machineId])
+  @@id([machineId, shiftId])
+  @@map("machine_shift_assignment")
 }
 
-model DowntimeLabel {
-  id              String        @id @default(uuid())
-  downtimeEventId String
-  labelName       String
+model User {
+  id           String    @id @default(uuid())
+  employeeId   String?   @unique @map("employee_id")
+  username     String    @unique
+  passwordHash String?   @map("password_hash")
+  lastLoginAt  DateTime? @map("last_login_at")
+  isLocked     Boolean   @default(false) @map("is_locked")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  downtimeEvent   DowntimeEvent @relation(fields: [downtimeEventId], references: [id], onDelete: Cascade)
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
 
-  @@unique([downtimeEventId, labelName])
+  @@map("users")
 }
 
-model PmTemplate {
-  id                     String           @id @default(uuid())
-  siteId                 String
-  code                   String
-  title                  String
-  machineId              String
-  frequencyType          String
-  frequencyValue         Int
-  frequencyUnit          String
-  estimatedDurationHours Float            @default(1.0)
-  requiredRole           String           @default("TECHNICIAN")
-  isActive               Boolean          @default(true)
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityName String   @map("entity_name")
+  entityId   String   @map("entity_id")
+  action     String   // CREATE | UPDATE | DELETE
+  actorId    String   @map("actor_id")
+  diff       String?  @default("{}") // JSON string
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  site                   Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  machine                Machine          @relation(fields: [machineId], references: [id], onDelete: Cascade)
-  workOrders             WorkOrder[]
-  schedules              PmSchedule[]
+  actor      User     @relation(fields: [actorId], references: [id])
 
-  @@unique([siteId, code])
-}
-
-model Part {
-  id             String          @id @default(uuid())
-  siteId         String
-  partNumber     String
-  name           String
-  unitCost       Float           @default(0.0)
-  quantityOnHand Float           @default(0.0)
-  minStockLevel  Float           @default(0.0)
-  createdAt      DateTime        @default(now())
-
-  site           Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  workOrderParts WorkOrderPart[]
-
-  @@unique([siteId, partNumber])
-}
-
-model WorkOrder {
-  id                         String        @id @default(uuid())
-  siteId                     String
-  woNumber                   String
-  woType                     String
-  priority                   String        @default("MEDIUM")
-  status                     String        @default("DRAFT")
-  downtimeEventId            String?
-  pmTemplateId               String?
-  scheduledDate              DateTime?
-  estimatedHours             Float         @default(0.0)
-  actualHours                Float         @default(0.0)
-  estimatedPartsCost         Float         @default(0.0)
-  actualPartsCost            Float         @default(0.0)
-  requiresSupervisorApproval Boolean       @default(false)
-  approvedById               String?
-  approvedAt                 DateTime?
-  createdById                String
-  createdAt                  DateTime      @default(now())
-
-  site                       Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  downtimeEvent              DowntimeEvent? @relation(fields: [downtimeEventId], references: [id], onDelete: SetNull)
-  pmTemplate                 PmTemplate?   @relation(fields: [pmTemplateId], references: [id], onDelete: SetNull)
-  approvedBy                 Employee?     @relation("ApprovedBy", fields: [approvedById], references: [id])
-  createdBy                  Employee      @relation("CreatedBy", fields: [createdById], references: [id])
-  partsConsumed              WorkOrderPart[]
-  pmSchedules                PmSchedule[]
-
-  @@unique([siteId, woNumber])
-}
-
-model WorkOrderPart {
-  id               String    @id @default(uuid())
-  workOrderId      String
-  partId           String
-  quantityConsumed Float
-  totalCost        Float
-  consumedAt       DateTime  @default(now())
-
-  workOrder        WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  part             Part      @relation(fields: [partId], references: [id])
-}
-
-model PmSchedule {
-  id               String      @id @default(uuid())
-  siteId           String
-  pmTemplateId     String
-  scheduledDueDate DateTime
-  status           String      @default("SCHEDULED")
-  workOrderId      String?
-  generatedAt      DateTime?
-
-  site             Site        @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  pmTemplate       PmTemplate  @relation(fields: [pmTemplateId], references: [id], onDelete: Cascade)
-  workOrder        WorkOrder?  @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
-
-  @@unique([siteId, pmTemplateId, scheduledDueDate])
+  @@map("audit_log")
 }
