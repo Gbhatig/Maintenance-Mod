@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import DataGrid, { Column } from '@/components/DataGrid';
 import ChipMultiSelect from '@/components/ChipMultiSelect';
-import { Users, Plus, Upload, RefreshCw, Mail, Phone, Building2 } from 'lucide-react';
+import { Users, Plus, Upload, RefreshCw, Mail, Phone } from 'lucide-react';
 
 interface Employee {
   id: string;
@@ -31,8 +31,9 @@ export default function EmployeesMasterPage() {
   const [allSites, setAllSites] = useState<any[]>([]);
   const [allWarehouses, setAllWarehouses] = useState<any[]>([]);
 
-  // Form Modal State
+  // Form Modal State (Create or Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEmpId, setEditingEmpId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     mobile: '',
@@ -41,6 +42,7 @@ export default function EmployeesMasterPage() {
     role_id: '',
     site_ids: [] as string[],
     warehouse_ids: [] as string[],
+    status: 'ACTIVE',
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -89,22 +91,50 @@ export default function EmployeesMasterPage() {
     fetchLookups();
   }, [page]);
 
-  // Section 7.5 Rule: Role options filtered by selected Department
-  const filteredRoles = allRoles.filter((r) => !formData.department_id || r.departmentId === formData.department_id);
+  const handleOpenCreate = () => {
+    setEditingEmpId(null);
+    setFormData({
+      name: '',
+      mobile: '',
+      email: '',
+      department_id: '',
+      role_id: '',
+      site_ids: [],
+      warehouse_ids: [],
+      status: 'ACTIVE',
+    });
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
 
-  // Section 7.5 Rule: Warehouse options filtered by selected Sites
-  const filteredWarehouses = allWarehouses.filter(
-    (w) => formData.site_ids.length === 0 || formData.site_ids.includes(w.siteId)
-  );
+  const handleOpenEdit = (emp: Employee) => {
+    setEditingEmpId(emp.id);
+    setFormData({
+      name: emp.name,
+      mobile: emp.mobile || '',
+      email: emp.email || '',
+      department_id: emp.department?.id || '',
+      role_id: emp.role?.id || '',
+      site_ids: emp.sites?.map((s) => s.id) || [],
+      warehouse_ids: emp.warehouses?.map((w) => w.id) || [],
+      status: emp.status || 'ACTIVE',
+    });
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
 
-  const handleCreateSubmit = async (e: React.FormEvent) => {
+  const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormErrors({});
     setSubmitting(true);
 
     try {
-      const res = await fetch('/api/v1/employees', {
-        method: 'POST',
+      const isEdit = !!editingEmpId;
+      const url = isEdit ? `/api/v1/employees/${editingEmpId}` : '/api/v1/employees';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
@@ -121,15 +151,6 @@ export default function EmployeesMasterPage() {
       }
 
       setIsModalOpen(false);
-      setFormData({
-        name: '',
-        mobile: '',
-        email: '',
-        department_id: '',
-        role_id: '',
-        site_ids: [],
-        warehouse_ids: [],
-      });
       fetchEmployees();
     } catch (err: any) {
       setFormErrors({ general: err.message });
@@ -138,19 +159,20 @@ export default function EmployeesMasterPage() {
     }
   };
 
-  const handleBulkUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
+  const handleDelete = async (emp: Employee) => {
+    if (!confirm(`Are you sure you want to delete employee "${emp.name}"?`)) return;
     try {
-      const res = await fetch('/api/v1/employees/bulk', { method: 'POST' });
-      const result = await res.json();
-      setBulkJobResult(result);
-    } catch (err: any) {
-      console.error('Bulk upload error:', err);
-    } finally {
-      setSubmitting(false);
+      await fetch(`/api/v1/employees/${emp.id}`, { method: 'DELETE' });
+      fetchEmployees();
+    } catch (err) {
+      console.error('Delete employee error:', err);
     }
   };
+
+  const filteredRoles = allRoles.filter((r) => !formData.department_id || r.departmentId === formData.department_id);
+  const filteredWarehouses = allWarehouses.filter(
+    (w) => formData.site_ids.length === 0 || formData.site_ids.includes(w.siteId)
+  );
 
   const columns: Column<Employee>[] = [
     { key: 'emp_code', header: 'Emp Code', render: (r) => <span className="font-bold text-[#2E3A87]">{r.emp_code}</span> },
@@ -179,7 +201,7 @@ export default function EmployeesMasterPage() {
     { key: 'role', header: 'Role', render: (r) => <span className="font-medium text-[#1E63C4]">{r.role?.name}</span> },
     {
       key: 'assigned_sites',
-      header: 'Assigned Sites & Warehouses',
+      header: 'Assigned Scopes',
       render: (r) => (
         <div className="text-[11px] text-slate-600 space-y-0.5">
           <div>Sites: <strong className="text-slate-800">{r.sites?.map((s) => s.name).join(', ') || 'All'}</strong></div>
@@ -226,7 +248,7 @@ export default function EmployeesMasterPage() {
           </button>
 
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenCreate}
             className="px-4 py-2 bg-[#2E3A87] hover:bg-[#232d69] text-white text-xs font-bold rounded-[4px] shadow-sm flex items-center space-x-1.5 transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -243,15 +265,19 @@ export default function EmployeesMasterPage() {
         page={page}
         pageSize={pageSize}
         onPageChange={(p) => setPage(p)}
+        onEdit={handleOpenEdit}
+        onDelete={handleDelete}
         loading={loading}
       />
 
-      {/* Create Employee Modal */}
+      {/* Add / Edit Employee Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-xl shadow-2xl p-6 space-y-4 my-8 animate-in fade-in duration-200">
             <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
-              <h3 className="text-base font-bold text-[#2E3A87]">Add New Employee</h3>
+              <h3 className="text-base font-bold text-[#2E3A87]">
+                {editingEmpId ? 'Edit Employee Record' : 'Add New Employee'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
 
@@ -261,7 +287,7 @@ export default function EmployeesMasterPage() {
               </div>
             )}
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveSubmit} className="space-y-4 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
                   Full Name <span className="text-[#D93025]">*</span>
@@ -276,7 +302,6 @@ export default function EmployeesMasterPage() {
                 {formErrors.name && <p className="text-[#D93025] text-[11px] mt-0.5">{formErrors.name}</p>}
               </div>
 
-              {/* Contact Rule: Either Mobile or Email required */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
@@ -307,7 +332,6 @@ export default function EmployeesMasterPage() {
                 </div>
               </div>
 
-              {/* Department & Role Dropdowns */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
@@ -348,7 +372,6 @@ export default function EmployeesMasterPage() {
                 </div>
               </div>
 
-              {/* ChipMultiSelect for Assigned Sites */}
               <ChipMultiSelect
                 label="Assigned Sites Scope"
                 options={allSites.map((s) => ({ id: s.id, name: s.name, subtitle: `${s.code} — ${s.city}` }))}
@@ -357,9 +380,8 @@ export default function EmployeesMasterPage() {
                 placeholder="Select sites..."
               />
 
-              {/* ChipMultiSelect for Assigned Warehouses (Filtered by Sites) */}
               <ChipMultiSelect
-                label="Assigned Warehouses Scope (Filtered by Selected Sites)"
+                label="Assigned Warehouses Scope"
                 options={filteredWarehouses.map((w) => ({ id: w.id, name: w.name, subtitle: `Type: ${w.type}` }))}
                 selectedIds={formData.warehouse_ids}
                 onChange={(ids) => setFormData({ ...formData, warehouse_ids: ids })}
@@ -379,52 +401,7 @@ export default function EmployeesMasterPage() {
                   disabled={submitting}
                   className="px-5 py-2 bg-[#2E3A87] hover:bg-[#232d69] text-white font-bold rounded-[4px]"
                 >
-                  {submitting ? 'Saving...' : 'Save Employee'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Import Modal */}
-      {isBulkOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-md shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
-              <h3 className="text-base font-bold text-[#2E3A87]">Bulk Import Employees (CSV)</h3>
-              <button onClick={() => setIsBulkOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
-            </div>
-
-            <form onSubmit={handleBulkUpload} className="space-y-4 text-xs">
-              <div className="p-6 border-2 border-dashed border-[#E0E3E8] rounded-[6px] text-center bg-[#F5F7FB]">
-                <Upload className="w-8 h-8 mx-auto text-[#1E63C4] mb-2" />
-                <p className="font-semibold text-slate-700">Drop employees.csv here or click to browse</p>
-                <p className="text-[11px] text-slate-400 mt-1">Columns: name, mobile, email, dept_name, role_name</p>
-                <input type="file" accept=".csv" className="hidden" id="bulk-file" />
-              </div>
-
-              {bulkJobResult && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-[4px]">
-                  <p className="font-bold">Job Enqueued: {bulkJobResult.job_id}</p>
-                  <p className="text-[11px]">{bulkJobResult.message}</p>
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsBulkOpen(false)}
-                  className="px-4 py-2 border border-[#E0E3E8] text-slate-600 rounded-[4px]"
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-[#2E3A87] text-white font-bold rounded-[4px]"
-                >
-                  {submitting ? 'Uploading...' : 'Start Import Job'}
+                  {submitting ? 'Saving...' : editingEmpId ? 'Update Employee' : 'Save Employee'}
                 </button>
               </div>
             </form>

@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import TreeBuilder, { TreeNode, flattenTree } from '@/components/TreeBuilder';
-import { Cpu, GitMerge, Plus, Trash2, ChevronRight, Activity, Sliders, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Cpu, Plus, Trash2, ChevronRight, Activity, Sliders, CheckCircle2, ArrowRight, Edit } from 'lucide-react';
 
 interface MachineTreeItem {
   id: string;
   name: string;
   level: number;
   path: string;
+  warehouse_id?: string;
   warehouse?: { name: string };
   production_params?: Array<{ id: string; metricName: string; unit: string }>;
   parameters?: Array<{ id: string; parameterName: string; minValue?: number; maxValue?: number; unit?: string }>;
@@ -23,20 +24,24 @@ export default function MachinesMasterPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
   const [warehouses, setWarehouses] = useState<any[]>([]);
 
+  // Edit Node Modal State
+  const [editingNode, setEditingNode] = useState<MachineTreeItem | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editWhId, setEditWhId] = useState('');
+  const [submittingEdit, setSubmittingEdit] = useState(false);
+
   // Wizard State (Steps 1 - 3)
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [wizardSiteId, setWizardSiteId] = useState<string>('');
   const [wizardWarehouseId, setWizardWarehouseId] = useState<string>('');
   const [wizardTreeNodes, setWizardTreeNodes] = useState<TreeNode[]>([
-    { temp_id: 'root_1', name: 'Fabrication Line 2', children: [] },
+    { temp_id: 'root_1', name: 'Fabrication Line 1', children: [] },
   ]);
 
-  // Step 2: Production Params
   const [prodParams, setProdParams] = useState<Array<{ metric_name: string; unit: string }>>([
     { metric_name: 'units_per_hour', unit: 'pcs/hr' },
   ]);
 
-  // Step 3: Operating Parameters
   const [operParams, setOperParams] = useState<Array<{ parameter_name: string; min_value: string; max_value: string; unit: string }>>([
     { parameter_name: 'Rated Line Voltage', min_value: '400', max_value: '440', unit: 'V' },
   ]);
@@ -88,6 +93,38 @@ export default function MachinesMasterPage() {
     fetchTree();
   }, [selectedSiteId]);
 
+  const handleOpenEditNode = (item: MachineTreeItem) => {
+    setEditingNode(item);
+    setEditName(item.name);
+    setEditWhId(item.warehouse_id || '');
+  };
+
+  const handleSaveEditNode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingNode) return;
+    setSubmittingEdit(true);
+
+    try {
+      const res = await fetch(`/api/v1/machines/${editingNode.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName,
+          warehouse_id: editWhId || null,
+        }),
+      });
+
+      if (res.ok) {
+        setEditingNode(null);
+        fetchTree();
+      }
+    } catch (err) {
+      console.error('Save node edit error:', err);
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
   const handleDeleteMachine = async (id: string, name: string) => {
     if (!confirm(`Are you sure you want to delete machine "${name}" and all its sub-nodes?`)) return;
     try {
@@ -98,7 +135,6 @@ export default function MachinesMasterPage() {
     }
   };
 
-  // Step 1 Submit -> Creates Machines & Advances to Step 2
   const handleWizardStep1Submit = async () => {
     const flattened = flattenTree(wizardTreeNodes);
     if (flattened.length === 0) {
@@ -135,7 +171,6 @@ export default function MachinesMasterPage() {
     }
   };
 
-  // Step 2 Submit -> Creates Production Params & Advances to Step 3
   const handleWizardStep2Submit = async () => {
     setSubmitting(true);
     try {
@@ -158,7 +193,6 @@ export default function MachinesMasterPage() {
     }
   };
 
-  // Step 3 Submit -> Creates Operating Params & Completes Wizard
   const handleWizardStep3Submit = async () => {
     setSubmitting(true);
     try {
@@ -199,18 +233,26 @@ export default function MachinesMasterPage() {
             )}
           </div>
 
-          <button
-            onClick={() => handleDeleteMachine(item.id, item.name)}
-            className="p-1 text-[#D93025] hover:bg-red-50 rounded transition-colors"
-            title="Delete Branch"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => handleOpenEditNode(item)}
+              className="p-1 text-[#1E63C4] hover:bg-blue-50 rounded transition-colors"
+              title="Edit Node"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleDeleteMachine(item.id, item.name)}
+              className="p-1 text-[#D93025] hover:bg-red-50 rounded transition-colors"
+              title="Delete Branch"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <p className="text-[11px] text-slate-400 font-mono">Path: {item.path}</p>
 
-        {/* Metrics & Operating Params */}
         {((item.production_params && item.production_params.length > 0) ||
           (item.parameters && item.parameters.length > 0)) && (
           <div className="flex flex-wrap gap-2 pt-2 border-t border-[#E0E3E8]/60 text-[11px]">
@@ -227,7 +269,6 @@ export default function MachinesMasterPage() {
           </div>
         )}
 
-        {/* Recursive Children */}
         {item.children.length > 0 && (
           <div className="pl-4 border-l-2 border-blue-200 space-y-2 mt-2">
             {item.children.map((child) => renderRecursiveTreeItem(child))}
@@ -282,6 +323,7 @@ export default function MachinesMasterPage() {
                 onChange={(e) => setSelectedSiteId(e.target.value)}
                 className="px-3 py-1.5 bg-[#F5F7FB] border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800 focus:outline-none"
               >
+                <option value="">All Sites</option>
                 {sites.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} ({s.code})
@@ -306,10 +348,67 @@ export default function MachinesMasterPage() {
         </div>
       )}
 
+      {/* EDIT NODE MODAL */}
+      {editingNode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-md shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
+              <h3 className="text-base font-bold text-[#2E3A87]">Edit Machine Node</h3>
+              <button onClick={() => setEditingNode(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditNode} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Machine Node Name *</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 border border-[#E0E3E8] rounded-[4px] focus:outline-none focus:border-[#1E63C4]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Assigned Warehouse</label>
+                <select
+                  value={editWhId}
+                  onChange={(e) => setEditWhId(e.target.value)}
+                  className="w-full px-3 py-2 border border-[#E0E3E8] rounded-[4px]"
+                >
+                  <option value="">None / Site Level</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} ({w.type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-[#E0E3E8]">
+                <button
+                  type="button"
+                  onClick={() => setEditingNode(null)}
+                  className="px-4 py-2 border border-[#E0E3E8] text-slate-600 rounded-[4px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEdit}
+                  className="px-5 py-2 bg-[#2E3A87] text-white font-bold rounded-[4px]"
+                >
+                  {submittingEdit ? 'Updating...' : 'Save Node'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* VIEW 2: 3-STEP MACHINE WIZARD */}
       {viewMode === 'WIZARD' && (
         <div className="bg-white border border-[#E0E3E8] rounded-[6px] shadow-sm p-6 space-y-6">
-          {/* Wizard Stepper Header */}
           <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-4">
             <div className={`flex items-center space-x-2 text-xs font-bold ${wizardStep === 1 ? 'text-[#1E63C4]' : 'text-slate-400'}`}>
               <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${wizardStep === 1 ? 'bg-blue-100 text-[#1E63C4]' : 'bg-slate-100'}`}>1</span>
@@ -329,7 +428,6 @@ export default function MachinesMasterPage() {
             </div>
           </div>
 
-          {/* STEP 1: TREE BUILDER */}
           {wizardStep === 1 && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4 text-xs">
@@ -367,7 +465,6 @@ export default function MachinesMasterPage() {
                 </div>
               </div>
 
-              {/* TreeBuilder Component */}
               <TreeBuilder nodes={wizardTreeNodes} onChange={(n) => setWizardTreeNodes(n)} />
 
               <div className="flex justify-end pt-4 border-t border-[#E0E3E8]">
@@ -384,7 +481,6 @@ export default function MachinesMasterPage() {
             </div>
           )}
 
-          {/* STEP 2: PRODUCTION METRICS */}
           {wizardStep === 2 && (
             <div className="space-y-6">
               <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-[4px] text-xs flex items-center space-x-2">
@@ -456,7 +552,6 @@ export default function MachinesMasterPage() {
             </div>
           )}
 
-          {/* STEP 3: OPERATING PARAMETERS */}
           {wizardStep === 3 && (
             <div className="space-y-6">
               <div className="space-y-3">

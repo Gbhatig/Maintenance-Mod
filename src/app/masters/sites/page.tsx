@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import DataGrid, { Column } from '@/components/DataGrid';
-import { Plus, Building2, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import { Plus, Building2, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Site {
   id: string;
@@ -26,20 +26,23 @@ export default function SitesMasterPage() {
   const [pageSize] = useState(10);
   const [loading, setLoading] = useState(false);
 
-  // Form Modal State
+  // Form Modal State (Create or Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
+    code: '',
     name: '',
     address: '',
     city: '',
     state: '',
     country: 'IN',
     gst_no: '',
+    status: 'ACTIVE',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  // Delete Error Alert (409 Conflict HAS_DEPENDENTS)
+  // Delete Error Alert
   const [deleteConflict, setDeleteConflict] = useState<any | null>(null);
 
   const fetchSites = async () => {
@@ -62,14 +65,41 @@ export default function SitesMasterPage() {
     fetchSites();
   }, [page]);
 
-  const handleCreateSubmit = async (e: React.FormEvent) => {
+  const handleOpenCreate = () => {
+    setEditingSiteId(null);
+    setFormData({ code: '', name: '', address: '', city: '', state: '', country: 'IN', gst_no: '', status: 'ACTIVE' });
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (site: Site) => {
+    setEditingSiteId(site.id);
+    setFormData({
+      code: site.code,
+      name: site.name,
+      address: site.address || '',
+      city: site.city || '',
+      state: site.state || '',
+      country: site.country || 'IN',
+      gst_no: site.gst_no || '',
+      status: site.status || 'ACTIVE',
+    });
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
+
+  const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormErrors({});
     setSubmitting(true);
 
     try {
-      const res = await fetch('/api/v1/sites', {
-        method: 'POST',
+      const isEdit = !!editingSiteId;
+      const url = isEdit ? `/api/v1/sites/${editingSiteId}` : '/api/v1/sites';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
@@ -86,7 +116,6 @@ export default function SitesMasterPage() {
       }
 
       setIsModalOpen(false);
-      setFormData({ name: '', address: '', city: '', state: '', country: 'IN', gst_no: '' });
       fetchSites();
     } catch (err: any) {
       setFormErrors({ general: err.message });
@@ -97,6 +126,8 @@ export default function SitesMasterPage() {
 
   const handleDelete = async (site: Site) => {
     setDeleteConflict(null);
+    if (!confirm(`Are you sure you want to delete site "${site.name}"?`)) return;
+
     try {
       const res = await fetch(`/api/v1/sites/${site.id}`, {
         method: 'DELETE',
@@ -172,7 +203,7 @@ export default function SitesMasterPage() {
             <span>Refresh</span>
           </button>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenCreate}
             className="px-4 py-2 bg-[#2E3A87] hover:bg-[#232d69] text-white text-xs font-bold rounded-[4px] shadow-sm flex items-center space-x-1.5 transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -181,20 +212,12 @@ export default function SitesMasterPage() {
         </div>
       </div>
 
-      {/* Delete Conflict Alert Modal (Section 4.2 409 HAS_DEPENDENTS) */}
       {deleteConflict && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-[6px] text-red-800 text-xs flex items-start space-x-3 shadow-md">
           <AlertTriangle className="w-5 h-5 text-[#D93025] shrink-0 mt-0.5" />
           <div className="flex-1 space-y-1">
             <h4 className="font-bold text-sm text-[#D93025]">Cannot Delete Site &quot;{deleteConflict.siteName}&quot; (409 Conflict)</h4>
             <p>{deleteConflict.message}</p>
-            {deleteConflict.dependents && (
-              <div className="flex space-x-4 pt-1 font-semibold text-[11px]">
-                <span>Warehouses: {deleteConflict.dependents.warehouses}</span>
-                <span>Employees: {deleteConflict.dependents.employees}</span>
-                <span>Machines: {deleteConflict.dependents.machines}</span>
-              </div>
-            )}
           </div>
           <button onClick={() => setDeleteConflict(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
         </div>
@@ -208,16 +231,19 @@ export default function SitesMasterPage() {
         page={page}
         pageSize={pageSize}
         onPageChange={(p) => setPage(p)}
+        onEdit={handleOpenEdit}
         onDelete={handleDelete}
         loading={loading}
       />
 
-      {/* Create Site Modal */}
+      {/* Add / Edit Site Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
           <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in duration-200">
             <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
-              <h3 className="text-base font-bold text-[#2E3A87]">Add New Plant Site</h3>
+              <h3 className="text-base font-bold text-[#2E3A87]">
+                {editingSiteId ? 'Edit Plant Site' : 'Add New Plant Site'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
 
@@ -227,7 +253,7 @@ export default function SitesMasterPage() {
               </div>
             )}
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveSubmit} className="space-y-4 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
                   Site Name <span className="text-[#D93025]">*</span>
@@ -283,7 +309,6 @@ export default function SitesMasterPage() {
                     onChange={(e) => setFormData({ ...formData, country: e.target.value })}
                     className="w-full px-3 py-2 border border-[#E0E3E8] rounded-[4px] uppercase font-mono focus:outline-none focus:border-[#1E63C4]"
                   />
-                  {formErrors.country && <p className="text-[#D93025] text-[11px] mt-0.5">{formErrors.country}</p>}
                 </div>
 
                 <div>
@@ -322,7 +347,7 @@ export default function SitesMasterPage() {
                   disabled={submitting}
                   className="px-5 py-2 bg-[#2E3A87] hover:bg-[#232d69] text-white font-bold rounded-[4px]"
                 >
-                  {submitting ? 'Saving...' : 'Save Site'}
+                  {submitting ? 'Saving...' : editingSiteId ? 'Update Site' : 'Save Site'}
                 </button>
               </div>
             </form>

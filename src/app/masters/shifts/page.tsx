@@ -26,8 +26,9 @@ export default function ShiftsMasterPage() {
   const [loading, setLoading] = useState(false);
   const [sites, setSites] = useState<any[]>([]);
 
-  // Form Modal State
+  // Form Modal State (Create or Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     site_id: '',
     name: '',
@@ -62,7 +63,7 @@ export default function ShiftsMasterPage() {
         const result = await res.json();
         const siteList = result.data || [];
         setSites(siteList);
-        if (siteList.length > 0) {
+        if (siteList.length > 0 && !formData.site_id) {
           setFormData((prev) => ({ ...prev, site_id: siteList[0].id }));
         }
       }
@@ -76,28 +77,46 @@ export default function ShiftsMasterPage() {
     fetchSites();
   }, []);
 
-  const handleDayToggle = (dayIdx: number) => {
-    if (formData.working_days.includes(dayIdx)) {
-      setFormData({
-        ...formData,
-        working_days: formData.working_days.filter((d) => d !== dayIdx),
-      });
-    } else {
-      setFormData({
-        ...formData,
-        working_days: [...formData.working_days, dayIdx].sort(),
-      });
-    }
+  const handleOpenCreate = () => {
+    setEditingShiftId(null);
+    setFormData({
+      site_id: sites[0]?.id || '',
+      name: '',
+      start_time: '08:00',
+      end_time: '20:00',
+      break_minutes: 30,
+      working_days: [1, 2, 3, 4, 5],
+    });
+    setFormErrors({});
+    setIsModalOpen(true);
   };
 
-  const handleCreateSubmit = async (e: React.FormEvent) => {
+  const handleOpenEdit = (shift: Shift) => {
+    setEditingShiftId(shift.id);
+    setFormData({
+      site_id: shift.site_id,
+      name: shift.name,
+      start_time: shift.start_time,
+      end_time: shift.end_time,
+      break_minutes: shift.break_minutes,
+      working_days: shift.working_days || [1, 2, 3, 4, 5],
+    });
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
+
+  const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormErrors({});
     setSubmitting(true);
 
     try {
-      const res = await fetch('/api/v1/shifts', {
-        method: 'POST',
+      const isEdit = !!editingShiftId;
+      const url = isEdit ? `/api/v1/shifts/${editingShiftId}` : '/api/v1/shifts';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
@@ -114,19 +133,35 @@ export default function ShiftsMasterPage() {
       }
 
       setIsModalOpen(false);
-      setFormData({
-        site_id: sites[0]?.id || '',
-        name: '',
-        start_time: '08:00',
-        end_time: '20:00',
-        break_minutes: 30,
-        working_days: [1, 2, 3, 4, 5],
-      });
       fetchShifts();
     } catch (err: any) {
       setFormErrors({ general: err.message });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (shift: Shift) => {
+    if (!confirm(`Are you sure you want to delete shift "${shift.name}"?`)) return;
+    try {
+      await fetch(`/api/v1/shifts/${shift.id}`, { method: 'DELETE' });
+      fetchShifts();
+    } catch (err) {
+      console.error('Delete shift error:', err);
+    }
+  };
+
+  const handleDayToggle = (dayIdx: number) => {
+    if (formData.working_days.includes(dayIdx)) {
+      setFormData({
+        ...formData,
+        working_days: formData.working_days.filter((d) => d !== dayIdx),
+      });
+    } else {
+      setFormData({
+        ...formData,
+        working_days: [...formData.working_days, dayIdx].sort(),
+      });
     }
   };
 
@@ -209,7 +244,7 @@ export default function ShiftsMasterPage() {
             <span>Refresh</span>
           </button>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenCreate}
             className="px-4 py-2 bg-[#2E3A87] hover:bg-[#232d69] text-white text-xs font-bold rounded-[4px] shadow-sm flex items-center space-x-1.5 transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -226,15 +261,19 @@ export default function ShiftsMasterPage() {
         page={1}
         pageSize={50}
         onPageChange={() => {}}
+        onEdit={handleOpenEdit}
+        onDelete={handleDelete}
         loading={loading}
       />
 
-      {/* Create Shift Modal */}
+      {/* Add / Edit Shift Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-xl shadow-2xl p-6 space-y-4 my-8 animate-in fade-in duration-200">
             <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
-              <h3 className="text-base font-bold text-[#2E3A87]">Add New Plant Shift</h3>
+              <h3 className="text-base font-bold text-[#2E3A87]">
+                {editingShiftId ? 'Edit Plant Shift' : 'Add New Plant Shift'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
 
@@ -244,7 +283,7 @@ export default function ShiftsMasterPage() {
               </div>
             )}
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
@@ -279,7 +318,6 @@ export default function ShiftsMasterPage() {
                 </div>
               </div>
 
-              {/* TimeRangePicker Component */}
               <TimeRangePicker
                 startTime={formData.start_time}
                 endTime={formData.end_time}
@@ -289,7 +327,6 @@ export default function ShiftsMasterPage() {
                 onBreakMinutesChange={(val) => setFormData({ ...formData, break_minutes: val })}
               />
 
-              {/* Working Days Checkbox Selector */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-2">Working Days</label>
                 <div className="flex items-center space-x-2">
@@ -326,7 +363,7 @@ export default function ShiftsMasterPage() {
                   disabled={submitting}
                   className="px-5 py-2 bg-[#2E3A87] hover:bg-[#232d69] text-white font-bold rounded-[4px]"
                 >
-                  {submitting ? 'Saving...' : 'Save Shift'}
+                  {submitting ? 'Saving...' : editingShiftId ? 'Update Shift' : 'Save Shift'}
                 </button>
               </div>
             </form>

@@ -1,18 +1,33 @@
-import type { Metadata } from 'next';
-import './globals.css';
-import Link from 'next/link';
-import { Building2, Users, Clock, Cpu, UserCheck, Shield, ChevronDown } from 'lucide-react';
+'use client';
 
-export const metadata: Metadata = {
-  title: 'Manufacturing ERP — Masters Module v2.0',
-  description: 'Enterprise Manufacturing ERP — Sites, Employees, Shifts, and Machines Masters',
-};
+import './globals.css';
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { Building2, Users, Clock, Cpu, UserCheck, Shield, Trash2, AlertTriangle } from 'lucide-react';
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const [isFormatModalOpen, setIsFormatModalOpen] = useState(false);
+  const [formatting, setFormatting] = useState(false);
+
+  const handleFormatDatabase = async () => {
+    setFormatting(true);
+    try {
+      const res = await fetch('/api/v1/system/format', { method: 'POST' });
+      if (res.ok) {
+        setIsFormatModalOpen(false);
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Format database error:', err);
+    } finally {
+      setFormatting(false);
+    }
+  };
+
   return (
     <html lang="en">
       <body className="bg-[#F5F7FB] text-slate-800 antialiased min-h-screen flex flex-col font-sans">
@@ -29,13 +44,16 @@ export default function RootLayout({
               </span>
             </div>
 
-            {/* Active Site Switcher & User Profile Badge */}
-            <div className="flex items-center space-x-4 text-xs">
-              <div className="hidden sm:flex items-center space-x-2 bg-white/10 px-3 py-1.5 rounded-[4px] border border-white/20">
-                <span className="text-slate-300 text-[11px]">Active Site:</span>
-                <span className="font-bold text-white">STE-0001 Transmission Tower</span>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-300" />
-              </div>
+            {/* Actions & Format Data Button */}
+            <div className="flex items-center space-x-3 text-xs">
+              <button
+                onClick={() => setIsFormatModalOpen(true)}
+                className="px-3 py-1 bg-red-600/30 hover:bg-red-600 text-red-200 hover:text-white border border-red-400/40 rounded-[4px] font-semibold flex items-center space-x-1.5 transition-colors"
+                title="Wipe and format database"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Format Data</span>
+              </button>
 
               <div className="flex items-center space-x-2 bg-blue-900/50 px-2.5 py-1 rounded-[4px]">
                 <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -80,7 +98,6 @@ export default function RootLayout({
                 <span>Machines & Parameters</span>
               </Link>
 
-              {/* Stubs for Phase 2+ Navigation (Architectural Stubs Section 3.4) */}
               <div className="ml-auto flex items-center space-x-2 text-slate-400 text-[11px] py-2 px-3 border-l border-white/10">
                 <Shield className="w-3.5 h-3.5 text-slate-400" />
                 <span>Phase 2 Stubs: Orders · Inventory · Quality · Maintenance</span>
@@ -92,9 +109,43 @@ export default function RootLayout({
         {/* MAIN CONTENT AREA */}
         <main className="flex-1">{children}</main>
 
+        {/* FORMAT DATABASE CONFIRMATION MODAL */}
+        {isFormatModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+            <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-md shadow-2xl p-6 space-y-4">
+              <div className="flex items-center space-x-3 text-red-600">
+                <AlertTriangle className="w-6 h-6 shrink-0 text-[#D93025]" />
+                <h3 className="text-base font-bold text-slate-900">Format All ERP Data?</h3>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                This action will permanently delete all records across Sites, Warehouses, Employees, Shifts, Machines, and Audit Logs.
+              </p>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-[#E0E3E8]">
+                <button
+                  type="button"
+                  onClick={() => setIsFormatModalOpen(false)}
+                  className="px-4 py-2 border border-[#E0E3E8] text-slate-600 rounded-[4px] text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFormatDatabase}
+                  disabled={formatting}
+                  className="px-5 py-2 bg-[#D93025] hover:bg-red-700 text-white font-bold rounded-[4px] text-xs"
+                >
+                  {formatting ? 'Formatting...' : 'Yes, Format Database'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* FOOTER */}
         <footer className="bg-white border-t border-[#E0E3E8] py-3 text-center text-xs text-slate-400">
-          Manufacturing Module Masters Foundation v2.0 • ISO-3166 & ISA-95 Compliant • Built September 2026
+          Manufacturing Module Masters Foundation v2.0 • Full Editability & Formatting Enabled
         </footer>
       </body>
     </html>

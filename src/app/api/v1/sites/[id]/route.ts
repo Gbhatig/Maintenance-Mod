@@ -1,6 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+    const body = await request.json();
+    const { name, code, city, state, country = 'IN', gst_no, address, status = 'ACTIVE' } = body;
+
+    const fieldsErr: Record<string, string> = {};
+    if (!name || !name.trim()) fieldsErr.name = 'Name is required';
+    if (!city || !city.trim()) fieldsErr.city = 'City is required';
+    if (!state || !state.trim()) fieldsErr.state = 'State is required';
+
+    if (Object.keys(fieldsErr).length > 0) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'One or more fields are invalid.',
+            fields: fieldsErr,
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const updated = await prisma.site.update({
+      where: { id },
+      data: {
+        name: name.trim(),
+        code: code || undefined,
+        city: city.trim(),
+        state: state.trim(),
+        country: (country || 'IN').toUpperCase(),
+        gstNo: gst_no || null,
+        address: address || null,
+        status,
+      },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: { code: 'SERVER_ERROR', message: error.message } },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
