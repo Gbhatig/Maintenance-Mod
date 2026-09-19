@@ -7,14 +7,15 @@ import {
   Users,
   Plus,
   Upload,
-  RefreshCw,
   Mail,
   Phone,
   Calendar,
   CheckCircle,
   XCircle,
-  Clock,
   FileText,
+  UserPlus,
+  Trash2,
+  Filter,
 } from 'lucide-react';
 
 interface Employee {
@@ -42,6 +43,7 @@ interface LeaveRecord {
   total_days: number;
   reason?: string;
   status: string;
+  approved_by?: string;
 }
 
 export default function EmployeesMasterPage() {
@@ -89,10 +91,18 @@ export default function EmployeesMasterPage() {
   const [leaveReason, setLeaveReason] = useState('');
   const [submittingLeave, setSubmittingLeave] = useState(false);
 
-  // ALL LEAVES APPROVAL MODAL STATE (Company-wide)
+  // ALL LEAVES & DATE-BASED ASSIGNMENT MODAL STATE (Company-wide)
   const [isAllLeavesOpen, setIsAllLeavesOpen] = useState(false);
   const [allLeavesList, setAllLeavesList] = useState<LeaveRecord[]>([]);
   const [loadingAllLeaves, setLoadingAllLeaves] = useState(false);
+  const [selectedFilterDate, setSelectedFilterDate] = useState<string>(''); // YYYY-MM-DD
+
+  // Direct Assign Leave for Particular Day Form
+  const [directEmpId, setDirectEmpId] = useState<string>('');
+  const [directDate, setDirectDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [directLeaveType, setDirectLeaveType] = useState<string>('CASUAL');
+  const [directReason, setDirectReason] = useState<string>('Assigned by Admin');
+  const [submittingDirect, setSubmittingDirect] = useState<boolean>(false);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -211,7 +221,7 @@ export default function EmployeesMasterPage() {
     }
   };
 
-  // LEAVE MANAGEMENT HANDLERS
+  // INDIVIDUAL EMPLOYEE LEAVES
   const handleOpenManageLeaves = async (emp: Employee) => {
     setSelectedLeaveEmp(emp);
     setLoadingLeaves(true);
@@ -261,11 +271,13 @@ export default function EmployeesMasterPage() {
     }
   };
 
-  const handleOpenAllLeaves = async () => {
+  // COMPANY-WIDE LEAVES & DATE PICKER MANAGEMENT
+  const handleOpenAllLeaves = async (targetDate: string = '') => {
     setIsAllLeavesOpen(true);
     setLoadingAllLeaves(true);
     try {
-      const res = await fetch('/api/v1/leaves');
+      const url = targetDate ? `/api/v1/leaves?date=${targetDate}` : '/api/v1/leaves';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setAllLeavesList(data.data || []);
@@ -277,17 +289,69 @@ export default function EmployeesMasterPage() {
     }
   };
 
+  // DIRECTLY ADD / ASSIGN EMPLOYEE FOR LEAVE ON PARTICULAR DATE
+  const handleDirectAssignLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directEmpId || !directDate) {
+      alert('Please select an employee and date');
+      return;
+    }
+
+    setSubmittingDirect(true);
+    try {
+      const res = await fetch('/api/v1/leaves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_id: directEmpId,
+          leave_type: directLeaveType,
+          start_date: directDate,
+          end_date: directDate,
+          reason: directReason,
+          status: 'APPROVED',
+          approved_by: 'Super Admin',
+        }),
+      });
+
+      if (res.ok) {
+        setDirectEmpId('');
+        handleOpenAllLeaves(selectedFilterDate);
+      } else {
+        const result = await res.json();
+        alert(result.error?.message || 'Failed to assign leave');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmittingDirect(false);
+    }
+  };
+
+  // REMOVE / REVOKE EMPLOYEE LEAVE FOR A DATE
+  const handleRemoveLeave = async (leaveId: string) => {
+    if (!confirm('Are you sure you want to remove/cancel this employee leave record?')) return;
+    try {
+      const res = await fetch(`/api/v1/leaves/${leaveId}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (selectedLeaveEmp) handleOpenManageLeaves(selectedLeaveEmp);
+        if (isAllLeavesOpen) handleOpenAllLeaves(selectedFilterDate);
+      }
+    } catch (err) {
+      console.error('Remove leave error:', err);
+    }
+  };
+
   const handleUpdateLeaveStatus = async (leaveId: string, status: 'APPROVED' | 'REJECTED') => {
     try {
       const res = await fetch(`/api/v1/leaves/${leaveId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, approved_by: 'Saurav Khari' }),
+        body: JSON.stringify({ status, approved_by: 'Super Admin' }),
       });
 
       if (res.ok) {
         if (selectedLeaveEmp) handleOpenManageLeaves(selectedLeaveEmp);
-        if (isAllLeavesOpen) handleOpenAllLeaves();
+        if (isAllLeavesOpen) handleOpenAllLeaves(selectedFilterDate);
       }
     } catch (err) {
       console.error('Update leave status error:', err);
@@ -368,11 +432,11 @@ export default function EmployeesMasterPage() {
 
         <div className="flex items-center space-x-2">
           <button
-            onClick={handleOpenAllLeaves}
-            className="px-3 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold rounded-[4px] flex items-center space-x-1.5 transition-colors"
+            onClick={() => handleOpenAllLeaves('')}
+            className="px-3.5 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold rounded-[4px] flex items-center space-x-1.5 transition-colors"
           >
             <Calendar className="w-4 h-4 text-amber-600" />
-            <span>Leave Applications & Approvals</span>
+            <span>Leave Approvals & Date Assignment</span>
           </button>
 
           <button
@@ -398,6 +462,208 @@ export default function EmployeesMasterPage() {
         loading={loading}
       />
 
+      {/* COMPANY-WIDE LEAVES & DATE PICKER ASSIGNMENT / REMOVAL MODAL */}
+      {isAllLeavesOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-4xl shadow-2xl p-6 space-y-5 my-8 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
+              <div className="flex items-center space-x-2">
+                <Calendar className="w-5 h-5 text-amber-600" />
+                <h3 className="text-base font-bold text-[#2E3A87]">
+                  Leave Management & Date-of-Year Assignment
+                </h3>
+              </div>
+              <button onClick={() => setIsAllLeavesOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            {/* DIRECT ASSIGN EMPLOYEE FOR LEAVE ON PARTICULAR DAY */}
+            <form onSubmit={handleDirectAssignLeave} className="p-4 bg-amber-50/60 border border-amber-200 rounded-[6px] space-y-3 text-xs">
+              <div className="flex items-center space-x-2 font-bold text-amber-900">
+                <UserPlus className="w-4 h-4 text-amber-700" />
+                <span>Add / Assign Employee on Leave for Particular Day of the Year</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Select Employee *</label>
+                  <select
+                    value={directEmpId}
+                    onChange={(e) => setDirectEmpId(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800"
+                    required
+                  >
+                    <option value="">Choose Employee...</option>
+                    {employees.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name} ({e.emp_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Select Date of Year *</label>
+                  <input
+                    type="date"
+                    value={directDate}
+                    onChange={(e) => setDirectDate(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Leave Type</label>
+                  <select
+                    value={directLeaveType}
+                    onChange={(e) => setDirectLeaveType(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800"
+                  >
+                    <option value="CASUAL">Casual Leave</option>
+                    <option value="SICK">Sick Leave</option>
+                    <option value="EARNED">Earned Leave</option>
+                    <option value="UNPAID">Unpaid Leave</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Reason / Remarks</label>
+                  <input
+                    type="text"
+                    value={directReason}
+                    onChange={(e) => setDirectReason(e.target.value)}
+                    placeholder="Assigned by Admin"
+                    className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  disabled={submittingDirect}
+                  className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-[4px] flex items-center space-x-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{submittingDirect ? 'Assigning...' : 'Directly Assign Leave for Date'}</span>
+                </button>
+              </div>
+            </form>
+
+            {/* FILTER BY PARTICULAR DATE OF THE YEAR */}
+            <div className="flex items-center justify-between bg-[#F5F7FB] p-3 rounded-[6px] border border-[#E0E3E8] text-xs">
+              <div className="flex items-center space-x-2">
+                <Filter className="w-4 h-4 text-[#1E63C4]" />
+                <span className="font-bold text-slate-700">Filter Leaves by Particular Day of Year:</span>
+                <input
+                  type="date"
+                  value={selectedFilterDate}
+                  onChange={(e) => {
+                    setSelectedFilterDate(e.target.value);
+                    handleOpenAllLeaves(e.target.value);
+                  }}
+                  className="px-3 py-1 bg-white border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800"
+                />
+                {selectedFilterDate && (
+                  <button
+                    onClick={() => {
+                      setSelectedFilterDate('');
+                      handleOpenAllLeaves('');
+                    }}
+                    className="text-xs text-[#1E63C4] underline font-semibold ml-2"
+                  >
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+
+              <span className="font-bold text-slate-600">
+                Total Listed Records: {allLeavesList.length}
+              </span>
+            </div>
+
+            {/* LEAVES LIST WITH REMOVE / REVOKE & APPROVE BUTTONS */}
+            {loadingAllLeaves ? (
+              <p className="text-center py-8 text-slate-400 italic">Loading leave records...</p>
+            ) : allLeavesList.length === 0 ? (
+              <p className="text-center py-8 text-slate-400 italic border border-dashed rounded-[4px]">
+                No employee leaves found {selectedFilterDate ? `for ${selectedFilterDate}` : ''}.
+              </p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto space-y-2 pr-1 text-xs">
+                {allLeavesList.map((l) => (
+                  <div
+                    key={l.id}
+                    className="p-3.5 bg-white border border-[#E0E3E8] rounded-[6px] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs hover:border-[#1E63C4] transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-slate-800 text-sm">{l.employee_name}</span>
+                        <span className="font-mono text-[#2E3A87] text-[11px]">({l.emp_code})</span>
+                        <span className="text-slate-400">• {l.department_name}</span>
+                      </div>
+
+                      <div className="flex items-center space-x-2 font-semibold text-slate-700">
+                        <span className="px-2 py-0.5 bg-blue-50 text-[#1E63C4] rounded text-[11px] font-bold">{l.leave_type}</span>
+                        <span>{l.start_date} to {l.end_date}</span>
+                        <span className="text-slate-400">({l.total_days} days)</span>
+                      </div>
+
+                      {l.reason && <p className="text-slate-500 italic text-[11px]">&quot;{l.reason}&quot;</p>}
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span
+                        className={`px-2.5 py-1 rounded-[4px] text-[10px] font-bold ${
+                          l.status === 'APPROVED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : l.status === 'REJECTED'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {l.status}
+                      </span>
+
+                      {l.status === 'PENDING' && (
+                        <div className="flex space-x-1">
+                          <button
+                            onClick={() => handleUpdateLeaveStatus(l.id, 'APPROVED')}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-[11px] flex items-center space-x-1"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>Approve</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* REMOVE / REVOKE EMPLOYEE LEAVE FOR DATE */}
+                      <button
+                        onClick={() => handleRemoveLeave(l.id)}
+                        className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-[#D93025] border border-red-200 font-bold rounded text-[11px] flex items-center space-x-1 transition-colors"
+                        title="Remove Employee Leave for Date"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remove Leave</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-[#E0E3E8]">
+              <button
+                onClick={() => setIsAllLeavesOpen(false)}
+                className="px-4 py-1.5 border border-[#E0E3E8] text-slate-600 rounded-[4px] text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* INDIVIDUAL EMPLOYEE LEAVE MANAGEMENT MODAL */}
       {selectedLeaveEmp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
@@ -415,7 +681,6 @@ export default function EmployeesMasterPage() {
               <button onClick={() => setSelectedLeaveEmp(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
 
-            {/* Leave Balance Summary */}
             {leaveSummary && (
               <div className="grid grid-cols-4 gap-3 bg-[#F5F7FB] p-3 rounded-[6px] border border-[#E0E3E8] text-xs">
                 <div>
@@ -437,7 +702,6 @@ export default function EmployeesMasterPage() {
               </div>
             )}
 
-            {/* Apply Leave Form */}
             <form onSubmit={handleApplyLeave} className="p-4 bg-blue-50/50 border border-blue-200 rounded-[6px] space-y-3 text-xs">
               <div className="flex items-center space-x-2 font-bold text-[#2E3A87]">
                 <FileText className="w-4 h-4 text-[#1E63C4]" />
@@ -504,7 +768,6 @@ export default function EmployeesMasterPage() {
               </div>
             </form>
 
-            {/* Leave History List */}
             <div className="space-y-2 text-xs">
               <h4 className="font-bold text-[#2E3A87]">Leave Records & Status History</h4>
               {loadingLeaves ? (
@@ -541,24 +804,13 @@ export default function EmployeesMasterPage() {
                           {l.status}
                         </span>
 
-                        {l.status === 'PENDING' && (
-                          <div className="flex space-x-1">
-                            <button
-                              onClick={() => handleUpdateLeaveStatus(l.id, 'APPROVED')}
-                              className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                              title="Approve Leave"
-                            >
-                              <CheckCircle className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleUpdateLeaveStatus(l.id, 'REJECTED')}
-                              className="p-1 text-red-600 hover:bg-red-50 rounded"
-                              title="Reject Leave"
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
+                        <button
+                          onClick={() => handleRemoveLeave(l.id)}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded"
+                          title="Remove Leave"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -569,94 +821,6 @@ export default function EmployeesMasterPage() {
             <div className="flex justify-end pt-2 border-t border-[#E0E3E8]">
               <button
                 onClick={() => setSelectedLeaveEmp(null)}
-                className="px-4 py-1.5 border border-[#E0E3E8] text-slate-600 rounded-[4px] text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ALL COMPANY LEAVES APPROVAL MODAL */}
-      {isAllLeavesOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-3xl shadow-2xl p-6 space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
-              <div className="flex items-center space-x-2">
-                <Calendar className="w-5 h-5 text-amber-600" />
-                <h3 className="text-base font-bold text-[#2E3A87]">Company Leave Applications & Approvals</h3>
-              </div>
-              <button onClick={() => setIsAllLeavesOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
-            </div>
-
-            {loadingAllLeaves ? (
-              <p className="text-center py-8 text-slate-400 italic">Loading leave applications...</p>
-            ) : allLeavesList.length === 0 ? (
-              <p className="text-center py-8 text-slate-400 italic border border-dashed rounded-[4px]">No leave applications logged in the system.</p>
-            ) : (
-              <div className="max-h-96 overflow-y-auto space-y-2 pr-1 text-xs">
-                {allLeavesList.map((l) => (
-                  <div
-                    key={l.id}
-                    className="p-3.5 bg-white border border-[#E0E3E8] rounded-[6px] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-bold text-slate-800 text-sm">{l.employee_name}</span>
-                        <span className="font-mono text-[#2E3A87] text-[11px]">({l.emp_code})</span>
-                        <span className="text-slate-400">• {l.department_name}</span>
-                      </div>
-
-                      <div className="flex items-center space-x-2 font-semibold text-slate-700">
-                        <span className="px-2 py-0.5 bg-blue-50 text-[#1E63C4] rounded text-[11px] font-bold">{l.leave_type}</span>
-                        <span>{l.start_date} to {l.end_date}</span>
-                        <span className="text-slate-400">({l.total_days} days)</span>
-                      </div>
-
-                      {l.reason && <p className="text-slate-500 italic text-[11px]">&quot;{l.reason}&quot;</p>}
-                    </div>
-
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <span
-                        className={`px-2.5 py-1 rounded-[4px] text-[10px] font-bold ${
-                          l.status === 'APPROVED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : l.status === 'REJECTED'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {l.status}
-                      </span>
-
-                      {l.status === 'PENDING' && (
-                        <div className="flex space-x-1">
-                          <button
-                            onClick={() => handleUpdateLeaveStatus(l.id, 'APPROVED')}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-[11px] flex items-center space-x-1"
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>Approve</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateLeaveStatus(l.id, 'REJECTED')}
-                            className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[11px] flex items-center space-x-1"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Reject</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex justify-end pt-2 border-t border-[#E0E3E8]">
-              <button
-                onClick={() => setIsAllLeavesOpen(false)}
                 className="px-4 py-1.5 border border-[#E0E3E8] text-slate-600 rounded-[4px] text-xs font-semibold"
               >
                 Close

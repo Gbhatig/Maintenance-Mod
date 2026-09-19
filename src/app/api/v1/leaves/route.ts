@@ -6,10 +6,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get('employee_id');
     const status = searchParams.get('status');
+    const dateParam = searchParams.get('date'); // YYYY-MM-DD
 
     const where: any = {};
     if (employeeId) where.employeeId = employeeId;
     if (status) where.status = status;
+
+    if (dateParam) {
+      const targetDate = new Date(dateParam);
+      where.startDate = { lte: targetDate };
+      where.endDate = { gte: targetDate };
+    }
 
     const leaves = await prisma.employeeLeave.findMany({
       where,
@@ -58,6 +65,8 @@ export async function POST(request: NextRequest) {
       start_date,
       end_date,
       reason,
+      status = 'PENDING',
+      approved_by,
     } = body;
 
     const fieldsErr: Record<string, string> = {};
@@ -104,8 +113,9 @@ export async function POST(request: NextRequest) {
         startDate: start,
         endDate: end,
         totalDays,
-        reason,
-        status: 'PENDING',
+        reason: reason || (status === 'APPROVED' ? 'Directly assigned by Admin for date' : ''),
+        status,
+        approvedBy: approved_by || (status === 'APPROVED' ? 'Admin' : null),
       },
       include: {
         employee: true,
