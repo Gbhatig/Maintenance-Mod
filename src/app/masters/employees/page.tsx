@@ -3,7 +3,19 @@
 import React, { useState, useEffect } from 'react';
 import DataGrid, { Column } from '@/components/DataGrid';
 import ChipMultiSelect from '@/components/ChipMultiSelect';
-import { Users, Plus, Upload, RefreshCw, Mail, Phone } from 'lucide-react';
+import {
+  Users,
+  Plus,
+  Upload,
+  RefreshCw,
+  Mail,
+  Phone,
+  Calendar,
+  CheckCircle,
+  XCircle,
+  Clock,
+  FileText,
+} from 'lucide-react';
 
 interface Employee {
   id: string;
@@ -16,6 +28,20 @@ interface Employee {
   status: string;
   sites?: Array<{ id: string; name: string }>;
   warehouses?: Array<{ id: string; name: string }>;
+}
+
+interface LeaveRecord {
+  id: string;
+  employee_id: string;
+  employee_name?: string;
+  emp_code?: string;
+  department_name?: string;
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  total_days: number;
+  reason?: string;
+  status: string;
 }
 
 export default function EmployeesMasterPage() {
@@ -31,7 +57,7 @@ export default function EmployeesMasterPage() {
   const [allSites, setAllSites] = useState<any[]>([]);
   const [allWarehouses, setAllWarehouses] = useState<any[]>([]);
 
-  // Form Modal State (Create or Edit)
+  // Add / Edit Employee Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmpId, setEditingEmpId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -44,13 +70,29 @@ export default function EmployeesMasterPage() {
     warehouse_ids: [] as string[],
     status: 'ACTIVE',
   });
-
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
   // Bulk Import Modal State
   const [isBulkOpen, setIsBulkOpen] = useState(false);
-  const [bulkJobResult, setBulkJobResult] = useState<any | null>(null);
+
+  // LEAVE MANAGEMENT MODAL STATE (Individual Employee)
+  const [selectedLeaveEmp, setSelectedLeaveEmp] = useState<Employee | null>(null);
+  const [empLeaves, setEmpLeaves] = useState<LeaveRecord[]>([]);
+  const [leaveSummary, setLeaveSummary] = useState<any>(null);
+  const [loadingLeaves, setLoadingLeaves] = useState(false);
+
+  // Apply Leave Form
+  const [leaveType, setLeaveType] = useState('CASUAL');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [leaveReason, setLeaveReason] = useState('');
+  const [submittingLeave, setSubmittingLeave] = useState(false);
+
+  // ALL LEAVES APPROVAL MODAL STATE (Company-wide)
+  const [isAllLeavesOpen, setIsAllLeavesOpen] = useState(false);
+  const [allLeavesList, setAllLeavesList] = useState<LeaveRecord[]>([]);
+  const [loadingAllLeaves, setLoadingAllLeaves] = useState(false);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -169,6 +211,89 @@ export default function EmployeesMasterPage() {
     }
   };
 
+  // LEAVE MANAGEMENT HANDLERS
+  const handleOpenManageLeaves = async (emp: Employee) => {
+    setSelectedLeaveEmp(emp);
+    setLoadingLeaves(true);
+    try {
+      const res = await fetch(`/api/v1/employees/${emp.id}/leaves`);
+      if (res.ok) {
+        const data = await res.json();
+        setEmpLeaves(data.leaves || []);
+        setLeaveSummary(data.summary || null);
+      }
+    } catch (err) {
+      console.error('Fetch employee leaves error:', err);
+    } finally {
+      setLoadingLeaves(false);
+    }
+  };
+
+  const handleApplyLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLeaveEmp) return;
+    setSubmittingLeave(true);
+
+    try {
+      const res = await fetch('/api/v1/leaves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_id: selectedLeaveEmp.id,
+          leave_type: leaveType,
+          start_date: startDate,
+          end_date: endDate,
+          reason: leaveReason,
+        }),
+      });
+
+      if (res.ok) {
+        setLeaveReason('');
+        handleOpenManageLeaves(selectedLeaveEmp);
+      } else {
+        const result = await res.json();
+        alert(result.error?.message || 'Failed to submit leave application');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
+
+  const handleOpenAllLeaves = async () => {
+    setIsAllLeavesOpen(true);
+    setLoadingAllLeaves(true);
+    try {
+      const res = await fetch('/api/v1/leaves');
+      if (res.ok) {
+        const data = await res.json();
+        setAllLeavesList(data.data || []);
+      }
+    } catch (err) {
+      console.error('Fetch all leaves error:', err);
+    } finally {
+      setLoadingAllLeaves(false);
+    }
+  };
+
+  const handleUpdateLeaveStatus = async (leaveId: string, status: 'APPROVED' | 'REJECTED') => {
+    try {
+      const res = await fetch(`/api/v1/leaves/${leaveId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, approved_by: 'Saurav Khari' }),
+      });
+
+      if (res.ok) {
+        if (selectedLeaveEmp) handleOpenManageLeaves(selectedLeaveEmp);
+        if (isAllLeavesOpen) handleOpenAllLeaves();
+      }
+    } catch (err) {
+      console.error('Update leave status error:', err);
+    }
+  };
+
   const filteredRoles = allRoles.filter((r) => !formData.department_id || r.departmentId === formData.department_id);
   const filteredWarehouses = allWarehouses.filter(
     (w) => formData.site_ids.length === 0 || formData.site_ids.includes(w.siteId)
@@ -200,13 +325,16 @@ export default function EmployeesMasterPage() {
     { key: 'dept', header: 'Department', render: (r) => r.department?.name || 'N/A' },
     { key: 'role', header: 'Role', render: (r) => <span className="font-medium text-[#1E63C4]">{r.role?.name}</span> },
     {
-      key: 'assigned_sites',
-      header: 'Assigned Scopes',
+      key: 'leaves',
+      header: 'Employee Leaves',
       render: (r) => (
-        <div className="text-[11px] text-slate-600 space-y-0.5">
-          <div>Sites: <strong className="text-slate-800">{r.sites?.map((s) => s.name).join(', ') || 'All'}</strong></div>
-          <div>WH: <strong className="text-slate-800">{r.warehouses?.map((w) => w.name).join(', ') || 'All'}</strong></div>
-        </div>
+        <button
+          onClick={() => handleOpenManageLeaves(r)}
+          className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-[4px] text-[11px] font-semibold flex items-center space-x-1 transition-colors"
+        >
+          <Calendar className="w-3.5 h-3.5 text-amber-600" />
+          <span>Manage Leaves</span>
+        </button>
       ),
     },
     {
@@ -234,17 +362,17 @@ export default function EmployeesMasterPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-[#2E3A87]">Employees Master Registry</h1>
-            <p className="text-xs text-slate-500">Staff directory, department roles, site scopes, and warehouse assignments</p>
+            <p className="text-xs text-slate-500">Staff directory, department roles, site scopes, and leave management</p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2">
           <button
-            onClick={() => setIsBulkOpen(true)}
-            className="px-3.5 py-2 border border-[#E0E3E8] bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-[4px] flex items-center space-x-1.5 transition-colors"
+            onClick={handleOpenAllLeaves}
+            className="px-3 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold rounded-[4px] flex items-center space-x-1.5 transition-colors"
           >
-            <Upload className="w-4 h-4 text-[#1E63C4]" />
-            <span>Bulk CSV Import</span>
+            <Calendar className="w-4 h-4 text-amber-600" />
+            <span>Leave Applications & Approvals</span>
           </button>
 
           <button
@@ -269,6 +397,274 @@ export default function EmployeesMasterPage() {
         onDelete={handleDelete}
         loading={loading}
       />
+
+      {/* INDIVIDUAL EMPLOYEE LEAVE MANAGEMENT MODAL */}
+      {selectedLeaveEmp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-2xl shadow-2xl p-6 space-y-5 my-8 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#2E3A87]">
+                  Leave Management: {selectedLeaveEmp.name}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Emp Code: <span className="font-semibold text-slate-800">{selectedLeaveEmp.emp_code}</span> | Dept:{' '}
+                  <span className="font-semibold text-slate-800">{selectedLeaveEmp.department?.name}</span>
+                </p>
+              </div>
+              <button onClick={() => setSelectedLeaveEmp(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            {/* Leave Balance Summary */}
+            {leaveSummary && (
+              <div className="grid grid-cols-4 gap-3 bg-[#F5F7FB] p-3 rounded-[6px] border border-[#E0E3E8] text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Casual Allowance</span>
+                  <span className="font-bold text-slate-800">{leaveSummary.casual_allowance} Days</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Sick Allowance</span>
+                  <span className="font-bold text-slate-800">{leaveSummary.sick_allowance} Days</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Approved Leaves</span>
+                  <span className="font-bold text-emerald-600">{leaveSummary.approved_days} Days</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Pending Approval</span>
+                  <span className="font-bold text-amber-600">{leaveSummary.pending_days} Days</span>
+                </div>
+              </div>
+            )}
+
+            {/* Apply Leave Form */}
+            <form onSubmit={handleApplyLeave} className="p-4 bg-blue-50/50 border border-blue-200 rounded-[6px] space-y-3 text-xs">
+              <div className="flex items-center space-x-2 font-bold text-[#2E3A87]">
+                <FileText className="w-4 h-4 text-[#1E63C4]" />
+                <span>Submit New Leave Application</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Leave Type</label>
+                  <select
+                    value={leaveType}
+                    onChange={(e) => setLeaveType(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800"
+                  >
+                    <option value="CASUAL">Casual Leave</option>
+                    <option value="SICK">Sick Leave</option>
+                    <option value="EARNED">Earned Leave</option>
+                    <option value="UNPAID">Unpaid Leave</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] font-semibold text-slate-800"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Reason for Leave</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Medical emergency or personal leave..."
+                  value={leaveReason}
+                  onChange={(e) => setLeaveReason(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-white border border-[#E0E3E8] rounded-[4px] text-slate-800"
+                />
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  disabled={submittingLeave}
+                  className="px-4 py-1.5 bg-[#2E3A87] hover:bg-[#232d69] text-white font-bold rounded-[4px]"
+                >
+                  {submittingLeave ? 'Submitting...' : 'Submit Application'}
+                </button>
+              </div>
+            </form>
+
+            {/* Leave History List */}
+            <div className="space-y-2 text-xs">
+              <h4 className="font-bold text-[#2E3A87]">Leave Records & Status History</h4>
+              {loadingLeaves ? (
+                <p className="text-center py-4 text-slate-400 italic">Loading leaves...</p>
+              ) : empLeaves.length === 0 ? (
+                <p className="text-center py-4 text-slate-400 italic border border-dashed rounded-[4px]">No leave applications filed yet.</p>
+              ) : (
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                  {empLeaves.map((l) => (
+                    <div
+                      key={l.id}
+                      className="p-3 bg-white border border-[#E0E3E8] rounded-[4px] flex items-center justify-between shadow-xs"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-[#2E3A87]">{l.leave_type} LEAVE</span>
+                          <span className="text-[11px] font-mono text-slate-500">
+                            {l.start_date} to {l.end_date} ({l.total_days} days)
+                          </span>
+                        </div>
+                        {l.reason && <p className="text-slate-600 text-[11px] italic">&quot;{l.reason}&quot;</p>}
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-[4px] text-[10px] font-bold ${
+                            l.status === 'APPROVED'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : l.status === 'REJECTED'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {l.status}
+                        </span>
+
+                        {l.status === 'PENDING' && (
+                          <div className="flex space-x-1">
+                            <button
+                              onClick={() => handleUpdateLeaveStatus(l.id, 'APPROVED')}
+                              className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                              title="Approve Leave"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleUpdateLeaveStatus(l.id, 'REJECTED')}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded"
+                              title="Reject Leave"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-[#E0E3E8]">
+              <button
+                onClick={() => setSelectedLeaveEmp(null)}
+                className="px-4 py-1.5 border border-[#E0E3E8] text-slate-600 rounded-[4px] text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ALL COMPANY LEAVES APPROVAL MODAL */}
+      {isAllLeavesOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white border border-[#E0E3E8] rounded-[6px] w-full max-w-3xl shadow-2xl p-6 space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-[#E0E3E8] pb-3">
+              <div className="flex items-center space-x-2">
+                <Calendar className="w-5 h-5 text-amber-600" />
+                <h3 className="text-base font-bold text-[#2E3A87]">Company Leave Applications & Approvals</h3>
+              </div>
+              <button onClick={() => setIsAllLeavesOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            {loadingAllLeaves ? (
+              <p className="text-center py-8 text-slate-400 italic">Loading leave applications...</p>
+            ) : allLeavesList.length === 0 ? (
+              <p className="text-center py-8 text-slate-400 italic border border-dashed rounded-[4px]">No leave applications logged in the system.</p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto space-y-2 pr-1 text-xs">
+                {allLeavesList.map((l) => (
+                  <div
+                    key={l.id}
+                    className="p-3.5 bg-white border border-[#E0E3E8] rounded-[6px] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-slate-800 text-sm">{l.employee_name}</span>
+                        <span className="font-mono text-[#2E3A87] text-[11px]">({l.emp_code})</span>
+                        <span className="text-slate-400">• {l.department_name}</span>
+                      </div>
+
+                      <div className="flex items-center space-x-2 font-semibold text-slate-700">
+                        <span className="px-2 py-0.5 bg-blue-50 text-[#1E63C4] rounded text-[11px] font-bold">{l.leave_type}</span>
+                        <span>{l.start_date} to {l.end_date}</span>
+                        <span className="text-slate-400">({l.total_days} days)</span>
+                      </div>
+
+                      {l.reason && <p className="text-slate-500 italic text-[11px]">&quot;{l.reason}&quot;</p>}
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span
+                        className={`px-2.5 py-1 rounded-[4px] text-[10px] font-bold ${
+                          l.status === 'APPROVED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : l.status === 'REJECTED'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {l.status}
+                      </span>
+
+                      {l.status === 'PENDING' && (
+                        <div className="flex space-x-1">
+                          <button
+                            onClick={() => handleUpdateLeaveStatus(l.id, 'APPROVED')}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-[11px] flex items-center space-x-1"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>Approve</span>
+                          </button>
+                          <button
+                            onClick={() => handleUpdateLeaveStatus(l.id, 'REJECTED')}
+                            className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[11px] flex items-center space-x-1"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Reject</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-[#E0E3E8]">
+              <button
+                onClick={() => setIsAllLeavesOpen(false)}
+                className="px-4 py-1.5 border border-[#E0E3E8] text-slate-600 rounded-[4px] text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Employee Modal */}
       {isModalOpen && (

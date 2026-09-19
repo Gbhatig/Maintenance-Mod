@@ -95,8 +95,27 @@ model Employee {
   warehouses   EmployeeWarehouse[]
   roster       EmployeeShiftRoster[]
   user         User?
+  leaves       EmployeeLeave[]
 
   @@map("employees")
+}
+
+model EmployeeLeave {
+  id          String   @id @default(uuid())
+  employeeId  String   @map("employee_id")
+  leaveType   String   @default("CASUAL") @map("leave_type") // CASUAL | SICK | EARNED | MATERNITY | PATERNITY | UNPAID
+  startDate   DateTime @map("start_date")
+  endDate     DateTime @map("end_date")
+  totalDays   Int      @default(1) @map("total_days")
+  reason      String?
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  approvedBy  String?  @map("approved_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("employee_leaves")
 }
 
 model EmployeeSite {
@@ -146,7 +165,7 @@ model Shift {
 
 model ShiftWorkingDay {
   shiftId   String @map("shift_id")
-  dayOfWeek Int    @map("day_of_week") // 0=Sunday, 1=Monday, ..., 6=Saturday
+  dayOfWeek Int    @map("day_of_week")
 
   shift     Shift  @relation(fields: [shiftId], references: [id], onDelete: Cascade)
 
@@ -247,9 +266,9 @@ model AuditLog {
   id         String   @id @default(uuid())
   entityName String   @map("entity_name")
   entityId   String   @map("entity_id")
-  action     String   // CREATE | UPDATE | DELETE
+  action     String
   actorId    String   @map("actor_id")
-  diff       String?  @default("{}") // JSON string
+  diff       String?  @default("{}")
   createdAt  DateTime @default(now()) @map("created_at")
 
   actor      User     @relation(fields: [actorId], references: [id])
